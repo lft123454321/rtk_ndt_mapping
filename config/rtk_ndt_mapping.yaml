@@ -1,0 +1,22 @@
+ndt_resolution: 1.0
+ndt_step_size: 0.1
+ndt_trans_epsilon: 0.01
+ndt_max_iterations: 100 #原来是30
+voxel_leaf_size: 0.1
+min_scan_range: 5.0
+max_scan_range: 50.0
+min_add_scan_shift: 1.0
+map_publish_interval: 10.0
+roi_min_x: -50.0
+roi_max_x: 50.0
+roi_min_y: -50.0
+roi_max_y: 50.0
+roi_min_z: -5.0
+roi_max_z: 15.0
+disable_rtk: false
+offline_bag_mode: true
+offline_bag_path: "/home/think/mapping/YF建图数据2024-4-27/2024-04-26-15-25-23.bag"
+map_block_size: 100.0
+ndt_search_radius: 50.0
+vis_downsample_res: 0.5
+block_downsample_res: 0.1 

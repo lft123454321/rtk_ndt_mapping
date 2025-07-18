@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="rtk_ndt_mapping" type="rtk_ndt_mapping_node" name="rtk_ndt_mapping_node" output="screen">
+    <rosparam file="$(find rtk_ndt_mapping)/config/rtk_ndt_mapping.yaml" command="load"/>
+  </node>
+</launch> 
