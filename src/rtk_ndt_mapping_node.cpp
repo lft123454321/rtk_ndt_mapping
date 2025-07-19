@@ -211,6 +211,8 @@ public:
         }
         bag.close();
         ROS_INFO("Bag parsing finished.");
+        ROS_INFO("Entering spin, you can now save or visualize the map.");
+        ros::spin();
     }
 
 private:
@@ -299,6 +301,7 @@ private:
 
     void pointsCallback(const sensor_msgs::PointCloud2::ConstPtr& msg)
     {
+        ros::Time t_start = ros::Time::now();
         // 检查自上次添加到地图以来的位移是否超过阈值，未超过则不添加，节省CPU时间
         if(!disable_rtk_ && !first_scan_) {
             static Eigen::Vector3f last_added_translation = current_pose_.block<3, 1>(0, 3);
@@ -329,6 +332,10 @@ private:
 
         // 发布地图
         // publishMap();
+
+        ros::Time t_end = ros::Time::now();
+        double duration = (t_end - t_start).toSec() * 1000.0; // ms
+        ROS_INFO("pointsCallback time usage: %.3f ms", duration);
     }
 
     void imuCallback(const sensor_msgs::Imu::ConstPtr& msg)
@@ -756,49 +763,30 @@ private:
 
     bool saveMapCallback(rtk_ndt_mapping::save_map::Request& req, rtk_ndt_mapping::save_map::Response& res)
     {
-        if (map_cloud_->empty())
+        if (map_blocks_.empty())
         {
-            ROS_WARN("Map is empty, cannot save");
+            ROS_WARN("Map blocks are empty, cannot save");
             return false;
         }
 
-        float filter_res = req.resolution;
         std::string destination = req.destination;
-        char buffer[80];
-        std::time_t now = std::time(NULL);
-        std::tm* pnow = std::localtime(&now);
-        std::strftime(buffer, 80, "%Y%m%d_%H%M%S", pnow);
-        std::string filename;
-        if (destination.empty())
-            filename = "rtk_ndt_map_" + std::string(buffer) + ".pcd";
-        else
-            filename = destination + "/rtk_ndt_map_" + std::string(buffer) + ".pcd";
-
-        pcl::PointCloud<pcl::PointXYZI>::Ptr save_cloud(new pcl::PointCloud<pcl::PointXYZI>);
-        if (filter_res > 0.0f)
-        {
-            pcl::VoxelGrid<pcl::PointXYZI> voxel_filter;
-            voxel_filter.setLeafSize(filter_res, filter_res, filter_res);
-            voxel_filter.setInputCloud(map_cloud_);
-            voxel_filter.filter(*save_cloud);
-            ROS_INFO("Filtered map: %lu points (resolution=%.2f)", save_cloud->size(), filter_res);
-        }
-        else
-        {
-            *save_cloud = *map_cloud_;
+        if (destination.empty()) {
+            ROS_WARN("Destination directory is empty, cannot save blocks");
+            return false;
         }
 
-        int result = pcl::io::savePCDFileASCII(filename, *save_cloud);
-        if (result == 0)
-        {
-            ROS_INFO("Map saved to %s with %lu points", filename.c_str(), save_cloud->size());
-            res.success = true;
-        }
-        else
-        {
-            ROS_ERROR("Failed to save map to %s", filename.c_str());
+        // 创建目录（如果不存在）
+        std::string cmd = "mkdir -p '" + destination + "'";
+        int ret = system(cmd.c_str());
+        if (ret != 0) {
+            ROS_ERROR("Failed to create directory: %s", destination.c_str());
             res.success = false;
+            return false;
         }
+
+        saveBlocks(destination);
+        ROS_INFO("Blocks saved to %s", destination.c_str());
+        res.success = true;
         return true;
     }
 
