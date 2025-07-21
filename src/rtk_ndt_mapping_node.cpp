@@ -901,7 +901,7 @@ private:
             vg.setLeafSize(block_downsample_res_, block_downsample_res_, block_downsample_res_);
             vg.setInputCloud(kv.second);
             vg.filter(*ds);
-            pcl::io::savePCDFileBinary(fname, *ds);
+            pcl::io::savePCDFileBinaryCompressed(fname, *ds);
         }
     }
     
