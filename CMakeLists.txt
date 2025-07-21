@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   rosbag
   roscpp_serialization
+  ndt_omp
 )
 
 find_package(PCL REQUIRED)
@@ -116,7 +117,7 @@ generate_messages(
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS roscpp sensor_msgs geometry_msgs nav_msgs tf pcl_ros pcl_conversions std_msgs std_srvs geodesy message_runtime
+  CATKIN_DEPENDS roscpp sensor_msgs geometry_msgs nav_msgs tf pcl_ros pcl_conversions std_msgs std_srvs geodesy message_runtime ndt_omp
   DEPENDS PCL Eigen3
 )
 
@@ -146,11 +147,21 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
+
 add_executable(rtk_ndt_mapping_node src/rtk_ndt_mapping_node.cpp)
+
+# OpenMP编译选项
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(rtk_ndt_mapping_node OpenMP::OpenMP_CXX)
+endif()
+
 target_link_libraries(rtk_ndt_mapping_node
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
 )
+
+# 可选：编译时传递USE_NDT_OMP宏（如需用CMake切换）
+# add_definitions(-DUSE_NDT_OMP)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the

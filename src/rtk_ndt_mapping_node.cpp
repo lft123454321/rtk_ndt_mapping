@@ -19,8 +19,15 @@
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
+
 #include <pcl/registration/ndt.h>
 #include <pcl/filters/voxel_grid.h>
+
+#include <pclomp/gicp_omp.h>
+#include <pclomp/ndt_omp.h>
+
+// 宏定义切换NDT实现
+#define USE_NDT_OMP  // 注释此行则使用普通NDT
 
 #include <geodesy/utm.h>
 #include <geographic_msgs/GeoPoint.h>
@@ -32,6 +39,7 @@
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
 #include <boost/foreach.hpp>
+
 
 class RTKNDTMapping
 {
@@ -67,8 +75,13 @@ private:
     pcl::PointCloud<pcl::PointXYZI>::Ptr current_scan_;
     pcl::VoxelGrid<pcl::PointXYZI> voxel_filter_;
 
+
     // NDT相关
-    pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI> ndt_;
+#ifdef USE_NDT_OMP
+    pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>* ndt_ = nullptr;
+#else
+    pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>* ndt_ = nullptr;
+#endif
     bool ndt_initialized_;
 
     // 位姿相关
@@ -141,6 +154,7 @@ private:
     std::map<BlockIndex, pcl::PointCloud<pcl::PointXYZI>::Ptr> map_blocks_;
 
 public:
+
     RTKNDTMapping() : 
         nh_(),
         private_nh_("~"),
@@ -153,26 +167,32 @@ public:
     {
         // 初始化参数
         initializeParameters();
-        
+
         // 初始化订阅器和发布器
         if(!offline_bag_mode_) {
             initializeSubscribers();
         }
         initializePublishers();
         initializeServices();
-        
+
         // 初始化NDT
+#ifdef USE_NDT_OMP
+        ndt_ = new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>();
+#else
+        ndt_ = new pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>();
+#endif
         initializeNDT();
-        
+
         // 初始化点云滤波器
         initializeFilters();
-        
+
         ROS_INFO("RTK-NDT Mapping initialized");
     }
 
+
     ~RTKNDTMapping()
     {
-
+        if (ndt_) delete ndt_;
     }
 
     void runOfflineBag() {
@@ -284,12 +304,16 @@ private:
         pub_map_srv_ = nh_.advertiseService("/pub_map", &RTKNDTMapping::pubMapCallback, this);
     }
 
+
     void initializeNDT()
     {
-        ndt_.setTransformationEpsilon(ndt_trans_epsilon_);
-        ndt_.setStepSize(ndt_step_size_);
-        ndt_.setResolution(ndt_resolution_);
-        ndt_.setMaximumIterations(ndt_max_iterations_);
+        ndt_->setTransformationEpsilon(ndt_trans_epsilon_);
+        ndt_->setStepSize(ndt_step_size_);
+        ndt_->setResolution(ndt_resolution_);
+        ndt_->setMaximumIterations(ndt_max_iterations_);
+#ifdef USE_NDT_OMP
+        ndt_->setNeighborhoodSearchMethod(pclomp::DIRECT26);
+#endif
     }
 
     void initializeFilters()
@@ -609,14 +633,14 @@ private:
                 return;
             }
             pcl::PointCloud<pcl::PointXYZI>::Ptr input_ptr(new pcl::PointCloud<pcl::PointXYZI>(input_cloud));
-            ndt_.setInputSource(input_ptr);
-            ndt_.setInputTarget(ndt_map);
+            ndt_->setInputSource(input_ptr);
+            ndt_->setInputTarget(ndt_map);
             ROS_INFO("ndt_map size: %ld, input_cloud size: %ld", ndt_map->size(), input_cloud.size());
             pcl::PointCloud<pcl::PointXYZI> ndt_aligned_cloud;
-            ndt_.align(ndt_aligned_cloud, current_pose_);
-            double transform_probability = ndt_.getTransformationProbability();
+            ndt_->align(ndt_aligned_cloud, current_pose_);
+            double transform_probability = ndt_->getTransformationProbability();
             if(transform_probability > 0.7) {
-                current_pose_ = ndt_.getFinalTransformation();
+                current_pose_ = ndt_->getFinalTransformation();
                 ROS_INFO("NDT transform probability > 0.7, update current_pose_ using NDT");
             } else {
                 ROS_INFO("NDT transform probability < 0.7, using RTK current_pose_");
@@ -646,14 +670,14 @@ private:
 
         // 设置NDT输入点云
         pcl::PointCloud<pcl::PointXYZI>::Ptr input_ptr(new pcl::PointCloud<pcl::PointXYZI>(input_cloud));
-        ndt_.setInputSource(input_ptr);
+        ndt_->setInputSource(input_ptr);
 
         // 执行NDT配准
         pcl::PointCloud<pcl::PointXYZI> output_cloud;
-        ndt_.align(output_cloud, current_pose_);
+        ndt_->align(output_cloud, current_pose_);
 
         // 更新位姿
-        current_pose_ = ndt_.getFinalTransformation();
+        current_pose_ = ndt_->getFinalTransformation();
         printPose(current_pose_, "processWithNDT, current_pose_");
         // 记录NDT pose
         geometry_msgs::Pose p;
@@ -680,7 +704,7 @@ private:
             addCloudToBlock(transformed_cloud, current_pose_);
 
             // 更新NDT目标点云
-            ndt_.setInputTarget(map_cloud_);
+            ndt_->setInputTarget(map_cloud_);
         }
     }
 
