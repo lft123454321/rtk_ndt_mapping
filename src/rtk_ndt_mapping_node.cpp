@@ -192,7 +192,10 @@ public:
 
     ~RTKNDTMapping()
     {
-        if (ndt_) delete ndt_;
+        if (ndt_) {
+            delete ndt_;
+            ndt_ = nullptr;
+        }
     }
 
     void runOfflineBag() {
@@ -578,7 +581,7 @@ private:
             // 第一帧，先将input_cloud根据current_pose_变换到map坐标系再添加到地图
             pcl::PointCloud<pcl::PointXYZI> transformed_cloud;
             pcl::transformPointCloud(input_cloud, transformed_cloud, current_pose_);
-            addCloudToBlock(transformed_cloud, current_pose_);  
+            addCloudToBlock(transformed_cloud);  
             do_map_publish_ = true;
             first_scan_ = false;
             ndt_initialized_ = true;
@@ -649,7 +652,7 @@ private:
         // 转换点云并添加到地图
         pcl::PointCloud<pcl::PointXYZI> transformed_cloud;
         pcl::transformPointCloud(input_cloud, transformed_cloud, current_pose_);
-        addCloudToBlock(transformed_cloud, current_pose_);        
+        addCloudToBlock(transformed_cloud);        
     }
 
     void processWithNDT(const pcl::PointCloud<pcl::PointXYZI>& input_cloud, const ros::Time& timestamp)
@@ -701,7 +704,7 @@ private:
             // 转换点云并添加到地图
             pcl::PointCloud<pcl::PointXYZI> transformed_cloud;
             pcl::transformPointCloud(input_cloud, transformed_cloud, current_pose_);
-            addCloudToBlock(transformed_cloud, current_pose_);
+            addCloudToBlock(transformed_cloud);
 
             // 更新NDT目标点云
             ndt_->setInputTarget(map_cloud_);
@@ -840,24 +843,27 @@ private:
         int by = static_cast<int>(std::floor(y / map_block_size_));
         return {bx, by};
     }
-    void addCloudToBlock(const pcl::PointCloud<pcl::PointXYZI>& cloud, const Eigen::Matrix4f& pose) {
+    void addCloudToBlock(const pcl::PointCloud<pcl::PointXYZI>& cloud) {
+        std::set<BlockIndex> affected_blocks_;
         for (const auto& pt : cloud) {
             Eigen::Vector4f p(pt.x, pt.y, pt.z, 1.0);
-            Eigen::Vector4f p_map = p; // pose * p;
+            Eigen::Vector4f p_map = p;
             BlockIndex idx = getBlockIndex(p_map.x(), p_map.y());
             if (!map_blocks_[idx]) map_blocks_[idx].reset(new pcl::PointCloud<pcl::PointXYZI>());
             pcl::PointXYZI pt_map;
             pt_map.x = p_map.x(); pt_map.y = p_map.y(); pt_map.z = p_map.z(); pt_map.intensity = pt.intensity;
             map_blocks_[idx]->push_back(pt_map);
+            affected_blocks_.insert(idx);
         }
-        // 遍历所有block，降采样到0.1m
-        for (auto& kv : map_blocks_) {
+        // 遍历受影响的block，降采样到0.1m
+        for (const auto& idx : affected_blocks_) {
+            auto& block = map_blocks_[idx];
             pcl::PointCloud<pcl::PointXYZI>::Ptr ds(new pcl::PointCloud<pcl::PointXYZI>());
             pcl::VoxelGrid<pcl::PointXYZI> vg;
             vg.setLeafSize(0.1f, 0.1f, 0.1f);
-            vg.setInputCloud(kv.second);
+            vg.setInputCloud(block);
             vg.filter(*ds);
-            kv.second = ds;
+            block = ds;
         }
     }
     pcl::PointCloud<pcl::PointXYZI>::Ptr getNearbyBlocksCloud(const Eigen::Vector3f& center, double radius) {
